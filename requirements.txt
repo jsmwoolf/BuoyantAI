@@ -1,0 +1,5 @@
+pyobjc
+pyobjc-core
+PyAutoGUI
+numpy
+opencv-python
