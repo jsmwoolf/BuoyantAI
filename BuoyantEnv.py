@@ -3,7 +3,7 @@ import sys
 import time
 from pathlib import Path
 if sys.platform == "darwin":
-    from AppKit import NSWorkspace
+    from AppKit import NSWorkspace, NSRunningApplication, NSApplicationActivateIgnoringOtherApps
     from Quartz import (
         CGWindowListCopyWindowInfo,
         kCGWindowListOptionOnScreenOnly,
@@ -13,12 +13,18 @@ if sys.platform == "darwin":
 import numpy as np
 import cv2
 import pyautogui
+import pytesseract
+
+def showImage(title, img):
+    cv2.imshow(title, img)
+    cv2.waitKey(0)
 
 class BuoyantEnv():
     def __init__(self):
         self.osType = sys.platform
         self.windowNumber = None
         self.appName = "Buoyant"
+        self._onMenu = False
 
     def _launchProgram(self):
         if self.osType == "darwin":
@@ -29,6 +35,11 @@ class BuoyantEnv():
         if retcode != 0:
             raise Exception("Could not find" + self.appName + "!")
 
+    def bringWindowToForeground(self):
+        if self.osType == "darwin":
+            app = NSRunningApplication.runningApplicationWithProcessIdentifier_(self._getWindow()['kCGWindowOwnerPID'])
+            app.activateWithOptions_(NSApplicationActivateIgnoringOtherApps)
+
     def _getWindow(self):
         return CGWindowListCopyWindowInfo(
             kCGWindowListOptionIncludingWindow, 
@@ -36,6 +47,15 @@ class BuoyantEnv():
         )[0]
 
     def getCoordinates(self):
+        coord = self._getWindow()['kCGWindowBounds']
+        return (
+            coord["X"], 
+            coord["Y"], 
+            coord["Width"], 
+            coord["Height"]
+        )
+
+    def _getBoundaries(self):
         coord = self._getWindow()['kCGWindowBounds']
         return (
             coord["X"], 
@@ -84,7 +104,6 @@ class BuoyantEnv():
             apps = NSWorkspace.sharedWorkspace().runningApplications()
             for app in apps:
                 active_app_name = app.localizedName()
-                print(active_app_name)
                 app_pid = app.processIdentifier()
         return app_pid
 
@@ -98,12 +117,18 @@ class BuoyantEnv():
                 self.windowNumber = self._findWindowByName()
 
     def _translateCoordinates(self, x, y):
+        """Poll for the window number"""
         coords = self.getCoordinates()
         return (coords[0] + x, coords[1] + y)
 
-    def moveMouse(self, x, y):
+    def moveMouse(self, x, y, duration=0, tween=pyautogui.linear):
+        """Move the mouse to a specific part of the window"""
         coords = self._translateCoordinates(x, y)
-        pyautogui.moveTo(coords[0], coords[1])
+        pyautogui.moveTo(coords[0], coords[1], duration=duration, tween=tween)
+
+    def clickMouse(self):
+        """Perform a left click"""
+        pyautogui.click()
 
     def getWindowShot(self, region=None):
         if region == None:
@@ -120,5 +145,32 @@ class BuoyantEnv():
                 return 
             self._launchProgram()
             self._searchAndGetWindow(byType='name')
-            geometry = self.getCoordinates()
+            geometry = self._getBoundaries()
             print(geometry)
+
+    def isOnMenu(self):
+        # 33, 445
+        if self._onMenu:
+            return True
+        photo = self.getWindowShot()
+        gray = cv2.cvtColor(photo, cv2.COLOR_BGR2GRAY)
+        gray = gray[430:475 , 33: 90]
+        gray[gray < 240] = 0
+        gray[gray >= 240] = 255
+        #showImage("Text", canny)
+        text = pytesseract.image_to_string(gray).strip()
+        print(text, ": ", len(text))
+
+        if text.lower() == 'play':
+            self._onMenu = True
+            self.bringWindowToForeground()
+        return self._onMenu
+
+    def startGame(self):
+        if self.isOnMenu():
+            print("Start a game!")
+            #print(x, y)
+            self.moveMouse(62,450, duration = 0.5)
+            time.sleep(0.5)
+            self.clickMouse()
+            self.onMenu = False

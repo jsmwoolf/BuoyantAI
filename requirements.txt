@@ -3,3 +3,4 @@ pyobjc-core
 PyAutoGUI
 numpy
 opencv-python
+pytesseract
