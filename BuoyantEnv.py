@@ -10,6 +10,9 @@ if sys.platform == "darwin":
         kCGWindowListOptionIncludingWindow,
         kCGNullWindowID
     )
+elif sys.platform == "win32" or sys.platform == "cygwin":
+    import win32gui
+    import os
 import numpy as np
 import cv2
 import pyautogui
@@ -32,8 +35,17 @@ class BuoyantEnv():
             print(pathToApp)
             retcode = subprocess.call(['open', '-a', pathToApp])
             print(retcode)
-        if retcode != 0:
-            raise Exception("Could not find" + self.appName + "!")
+            if retcode != 0:
+                raise Exception("Could not find" + self.appName + "!")
+        elif self._isWindowsOS():
+            steamPath = "C:\Program Files (x86)\Steam\steamapps\common\Buoyant"
+            if os.path.isdir(steamPath):
+                os.system('"C:\Program Files (x86)\Steam\Steam.exe" steam://rungameid/1085280')
+            else:
+                raise "Steam or the game isn't installed."
+    
+    def _isWindowsOS(self):
+        return self.osType == "win32" or self.osType == "cygwin"
 
     def bringWindowToForeground(self):
         if self.osType == "darwin":
@@ -47,29 +59,45 @@ class BuoyantEnv():
         )[0]
 
     def getCoordinates(self):
-        coord = self._getWindow()['kCGWindowBounds']
-        return (
-            coord["X"], 
-            coord["Y"], 
-            coord["Width"], 
-            coord["Height"]
-        )
+        x, y, w, h = 0, 0, 0, 0
+        if self.osType == 'darwin':
+            coord = self._getWindow()['kCGWindowBounds']
+            x = coord["X"]
+            y = coord["Y"]
+            w = coord["Width"]
+            h = coord["Height"]
+        elif self._isWindowsOS():
+            coord = win32gui.GetWindowRect(self.windowNumber)
+            x = coord[0]
+            y = coord[1]
+            w = coord[2] - x 
+            h = coord[3] - y
+        return (x, y, w, h)
 
     def _getBoundaries(self):
-        coord = self._getWindow()['kCGWindowBounds']
-        return (
-            coord["X"], 
-            coord["Y"], 
-            coord["X"] + coord["Width"], 
-            coord["Y"] + coord["Height"]
-        )
+        x, y, w, h = 0, 0, 0, 0
+        if self.osType == 'darwin':
+            coord = self._getWindow()['kCGWindowBounds']
+            x = coord["X"]
+            y = coord["Y"]
+            w = x + coord["Width"]
+            h = y + coord["Height"]
+        elif self._isWindowsOS():
+            coord = win32gui.GetWindowRect(self.windowNumber)
+            x = coord[0]
+            y = coord[1]
+            w = coord[2]
+            h = coord[3]
+        return (x, y, w, h)
 
-    def _getListOfAttribute(
-        self,
-        options=kCGWindowListOptionOnScreenOnly,
-        relativeToWindow=kCGNullWindowID
-        ):
-        return CGWindowListCopyWindowInfo(options, relativeToWindow)
+    # _getListOfAttributes is a Mac OS X specific method.
+    if sys.platform == 'darwin':
+        def _getListOfAttribute(
+            self,
+            options=kCGWindowListOptionOnScreenOnly,
+            relativeToWindow=kCGNullWindowID
+            ):
+            return CGWindowListCopyWindowInfo(options, relativeToWindow)
 
     def _findWindowByPid(self, pid):
         if self.windowNumber != None:
@@ -85,14 +113,20 @@ class BuoyantEnv():
 
     def _findWindowByName(self):
         if self.windowNumber != None:
-            return 
+            return
         print('Finding window number...')
         window = None
-        windowList = self._getListOfAttribute()
-        names = [app['kCGWindowName'] for app in windowList] 
-        if self.appName in names:
-            window = windowList[names.index(self.appName)]
-            return window['kCGWindowNumber']
+        if self.osType == 'darwin':
+            windowList = self._getListOfAttribute()
+            names = [app['kCGWindowName'] for app in windowList] 
+            if self.appName in names:
+                window = windowList[names.index(self.appName)]
+                return window['kCGWindowNumber']
+        elif self._isWindowsOS():
+            time.sleep(5)
+            hwnd = win32gui.FindWindow(None, "Buoyant")
+            if hwnd != 0:
+                return hwnd
         return None
     
     def _getPid(self):
@@ -140,13 +174,12 @@ class BuoyantEnv():
         return cv2.cvtColor(img, cv2.COLOR_RGBA2BGR)
 
     def getProgram(self):
-        if sys.platform == "darwin":
-            if self.windowNumber != None:
-                return 
-            self._launchProgram()
-            self._searchAndGetWindow(byType='name')
-            geometry = self._getBoundaries()
-            print(geometry)
+        if self.windowNumber != None:
+            return 
+        self._launchProgram()
+        self._searchAndGetWindow(byType='name')
+        geometry = self._getBoundaries()
+        print(geometry)
 
     def isOnMenu(self):
         # 33, 445
